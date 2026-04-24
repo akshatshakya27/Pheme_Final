@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { Clock, Flag, ChevronLeft, ChevronRight, Send } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { createOrUpdateSession, listMyAssignments, listMySessions, listQuestionsForExam } from '@/lib/backendApi';
+import { API_BASE_URL } from '@/lib/config';
 import { useToast } from '@/hooks/use-toast';
 import { Question } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,7 +37,7 @@ const ExamAttemptPage: React.FC = () => {
   const signalSocketRef = React.useRef<WebSocket | null>(null);
 
   const buildSignalUrl = (examId: string, studentId: string) => {
-    const apiBase = ((import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api');
+    const apiBase = API_BASE_URL;
     if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) {
       const wsBase = apiBase.replace(/^http/, 'ws');
       return `${wsBase}/proctoring/ws/${examId}/${studentId}?role=student`;

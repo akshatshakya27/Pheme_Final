@@ -1,6 +1,6 @@
 import { Batch, Exam, ExamResult, Faculty, Institute, ProctoringSession, Question, User, UserRole } from '@/types';
+import { API_BASE_URL } from '@/lib/config';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api';
 const ACCESS_TOKEN_KEY = 'proctorx_access_token';
 
 type LoginPortal = 'student' | 'institute' | 'dev';

@@ -32,3 +32,11 @@ Set this for the download button:
 If unset, fallback URL is:
 
 - `/downloads/ExamApplication.exe`
+
+Set this for backend API override (optional):
+
+- `VITE_API_BASE_URL=https://your-backend-domain`
+
+If unset, dashboard now defaults to:
+
+- `https://pheme-final.onrender.com`
