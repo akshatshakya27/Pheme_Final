@@ -9,7 +9,8 @@ import { Exam } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 
-const EXAM_APPLICATION_DOWNLOAD_URL = import.meta.env.VITE_EXAM_APPLICATION_DOWNLOAD_URL || '/downloads/ExamApplication.exe';
+const EXAM_APPLICATION_DOWNLOAD_URL =
+  import.meta.env.VITE_EXAM_APPLICATION_DOWNLOAD_URL || '/downloads/Pheme Secure Exam Setup 1.0.0.exe';
 
 const StudentExamsPage: React.FC = () => {
   const { toast } = useToast();

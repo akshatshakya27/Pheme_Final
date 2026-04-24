@@ -31,7 +31,7 @@ Set this for the download button:
 
 If unset, fallback URL is:
 
-- `/downloads/ExamApplication.exe`
+- `/downloads/Pheme Secure Exam Setup 1.0.0.exe`
 
 Set this for backend API override (optional):
 
