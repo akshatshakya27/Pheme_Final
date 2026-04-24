@@ -2,9 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import StudentLoginPage from "./pages/auth/StudentLoginPage";
+import OfficialLoginPage from "./pages/auth/OfficialLoginPage";
 import StudentDashboard from "./pages/student/Dashboard";
 import StudentExamsPage from "./pages/student/Exams";
 import StudentResultsPage from "./pages/student/Results";
@@ -26,15 +27,15 @@ const queryClient = new QueryClient({
 
 const PublicLandingPage = () => {
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 680, border: "1px solid #2b2b2b", borderRadius: 12, padding: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Pheme Dashboard</h1>
-        <p style={{ opacity: 0.8, marginBottom: 20 }}>Choose your portal to continue.</p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Link to="/login" style={{ padding: "10px 14px", border: "1px solid #2b2b2b", borderRadius: 8 }}>
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="w-full max-w-xl rounded-2xl border bg-card shadow-card p-6">
+        <h1 className="text-2xl font-bold mb-2">Pheme Dashboard</h1>
+        <p className="text-muted-foreground mb-6">Choose your portal to continue.</p>
+        <div className="flex gap-3 flex-wrap">
+          <Link to="/login" className="rounded-md border px-4 py-2 hover:bg-muted">
             Student Login
           </Link>
-          <Link to="/official-login" style={{ padding: "10px 14px", border: "1px solid #2b2b2b", borderRadius: 8 }}>
+          <Link to="/official-login" className="rounded-md border px-4 py-2 hover:bg-muted">
             Institute/Dev Login
           </Link>
         </div>
@@ -43,111 +44,11 @@ const PublicLandingPage = () => {
   );
 };
 
-const StudentLoginPage = () => {
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const onSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await login(email.trim(), password, "student");
-      navigate("/student", { replace: true });
-    } catch (err) {
-      setError((err as Error).message || "Login failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <form onSubmit={onSubmit} style={{ width: "100%", maxWidth: 420, border: "1px solid #2b2b2b", borderRadius: 12, padding: 24 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Student Login</h2>
-        <p style={{ opacity: 0.8, marginBottom: 16 }}>Sign in with your student credentials.</p>
-        <label style={{ display: "block", marginBottom: 12 }}>
-          <span>Email</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required style={{ width: "100%", marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }} />
-        </label>
-        <label style={{ display: "block", marginBottom: 12 }}>
-          <span>Password</span>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required style={{ width: "100%", marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }} />
-        </label>
-        {error ? <p style={{ color: "#ef4444", marginBottom: 10 }}>{error}</p> : null}
-        <button type="submit" disabled={loading} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }}>
-          {loading ? "Signing in..." : "Login"}
-        </button>
-      </form>
-    </div>
-  );
-};
-
-const OfficialLoginPage = () => {
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const [portal, setPortal] = useState<"institute" | "dev">("institute");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const onSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const user = await login(email.trim(), password, portal);
-      if (user.role === "student") {
-        navigate("/student", { replace: true });
-      } else {
-        navigate("/portal-unavailable", { replace: true });
-      }
-    } catch (err) {
-      setError((err as Error).message || "Login failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <form onSubmit={onSubmit} style={{ width: "100%", maxWidth: 460, border: "1px solid #2b2b2b", borderRadius: 12, padding: 24 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Institute/Dev Login</h2>
-        <p style={{ opacity: 0.8, marginBottom: 16 }}>Use institute or developer portal credentials.</p>
-        <label style={{ display: "block", marginBottom: 12 }}>
-          <span>Portal</span>
-          <select value={portal} onChange={(e) => setPortal(e.target.value as "institute" | "dev")} style={{ width: "100%", marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }}>
-            <option value="institute">Institute</option>
-            <option value="dev">Developer</option>
-          </select>
-        </label>
-        <label style={{ display: "block", marginBottom: 12 }}>
-          <span>Email</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required style={{ width: "100%", marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }} />
-        </label>
-        <label style={{ display: "block", marginBottom: 12 }}>
-          <span>Password</span>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required style={{ width: "100%", marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }} />
-        </label>
-        {error ? <p style={{ color: "#ef4444", marginBottom: 10 }}>{error}</p> : null}
-        <button type="submit" disabled={loading} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #2b2b2b" }}>
-          {loading ? "Signing in..." : "Login"}
-        </button>
-      </form>
-    </div>
-  );
-};
-
 const PortalUnavailablePage = () => (
-  <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-    <div style={{ width: "100%", maxWidth: 640, border: "1px solid #2b2b2b", borderRadius: 12, padding: 24 }}>
-      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Portal UI Not Included</h2>
-      <p style={{ opacity: 0.8, marginBottom: 16 }}>
+  <div className="min-h-screen bg-background flex items-center justify-center p-6">
+    <div className="w-full max-w-2xl rounded-2xl border bg-card shadow-card p-6">
+      <h2 className="text-2xl font-bold mb-2">Portal UI Not Included</h2>
+      <p className="text-muted-foreground mb-4">
         This deployed frontend bundle currently includes student pages only. Institute and dev dashboards are not part of this extracted dashboard package.
       </p>
       <Link to="/">Back to Landing</Link>
@@ -164,6 +65,8 @@ const AppRoutes = () => {
         <Route path="/" element={<PublicLandingPage />} />
         <Route path="/login" element={<StudentLoginPage />} />
         <Route path="/official-login" element={<OfficialLoginPage />} />
+        <Route path="/institute-login" element={<Navigate to="/official-login" replace />} />
+        <Route path="/dev-login" element={<Navigate to="/official-login" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
