@@ -10,7 +10,6 @@ class Token(BaseModel):
 	token_type: str
 	user_id: str
 	role: str
-	verification_image_saved_at: Optional[str] = None
 
 
 class InstituteCreate(BaseModel):
@@ -226,6 +225,12 @@ class ExamSessionCreate(BaseModel):
 	status: Optional[str] = "completed"
 
 
+class ExamSessionComplete(BaseModel):
+	score: Optional[int] = None
+	integrity: Optional[int] = None
+	status: Optional[str] = "submitted"
+
+
 class ExamSessionOut(BaseModel):
 	id: str
 	institute_id: Optional[str] = None
@@ -267,3 +272,67 @@ class ExamSessionWithDetails(BaseModel):
 
 	class Config:
 		from_attributes = True
+
+
+class DesktopLaunchTokenRequest(BaseModel):
+	exam_id: str
+
+
+class DesktopLaunchTokenOut(BaseModel):
+	launch_token: str
+	deep_link: str
+	expires_in_seconds: int
+
+
+class DesktopLaunchValidateRequest(BaseModel):
+	launch_token: str
+
+
+class DesktopLaunchValidateOut(BaseModel):
+	exam_id: str
+	exam_title: str
+	student_id: str
+	student_name: str
+	exam_duration_minutes: int
+	exam_api_token: str
+	backend_base_url: str
+
+
+class DesktopSessionStartRequest(BaseModel):
+	exam_id: str
+
+
+class DesktopSessionStartOut(BaseModel):
+	session_id: str
+	started_at: datetime
+
+
+class DesktopAnswerItem(BaseModel):
+	question_id: str
+	selected_option: Optional[int] = None
+
+
+class DesktopSubmitAnswersRequest(BaseModel):
+	session_id: str
+	answers: List[DesktopAnswerItem]
+
+
+class DesktopSubmitAnswersOut(BaseModel):
+	score: int
+
+
+class DesktopProctoringLogItem(BaseModel):
+	timestamp: datetime
+	event_type: str
+	severity: str
+	score: int = Field(default=0, ge=0, le=100)
+	metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DesktopProctoringLogsUploadRequest(BaseModel):
+	session_id: str
+	logs: List[DesktopProctoringLogItem]
+
+
+class DesktopSessionEndRequest(BaseModel):
+	session_id: str

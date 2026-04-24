@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, Battery, ChevronLeft, ChevronRight, Clock, Flag, Maximize2, Wifi } from 'lucide-react';
-import * as faceapi from 'face-api.js';
+import { AlertTriangle, Battery, ChevronLeft, ChevronRight, Clock, Flag, Maximize2, MessageSquare, Wifi } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { getFaceDescriptor } from './faceStore';
 import api from '@/lib/api';
+import { pollDesktopProctoringEvents } from '@/lib/desktopExam';
 
 interface Question {
   id: string;
@@ -25,11 +24,63 @@ interface Question {
 interface ExamInterfaceProps {
   title: string;
   examCode: string;
+  sessionId: string;
   durationMinutes: number;
-  onSubmit: (score: number, integrity: number) => void;
+  onSubmit: (
+    score: number,
+    integrity: number,
+    answers: Array<{ question_id: string; selected_option: number | null }>,
+  ) => Promise<void> | void;
+  proctoringMode?: 'backend-frame' | 'desktop-poll';
 }
 
-export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: ExamInterfaceProps) {
+function dataUrlToFile(dataUrl: string, filename: string) {
+  const [metadata, base64] = dataUrl.split(',');
+  const mimeMatch = metadata.match(/data:(.*?);base64/);
+  const mimeType = mimeMatch?.[1] || 'image/jpeg';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new File([bytes], filename, { type: mimeType });
+}
+
+function getAuthTokenFromStorage(): string | null {
+  const stored = localStorage.getItem('proctora-auth');
+  if (!stored) return null;
+
+  try {
+    const parsed = JSON.parse(stored);
+    return parsed?.state?.token || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildSignalingWsUrl(sessionId: string, token: string, role: 'student' | 'proctor'): string {
+  const envApiUrl = (import.meta as any)?.env?.VITE_API_URL as string | undefined;
+  const apiBase = envApiUrl || api.defaults.baseURL || '/api';
+  const isAbsolute = /^https?:\/\//i.test(apiBase);
+  const normalizedApiBase = isAbsolute
+    ? apiBase
+    : (window.location.protocol === 'file:' || !window.location.host)
+      ? `http://127.0.0.1:8000${apiBase.startsWith('/') ? '' : '/'}${apiBase}`
+      : `${window.location.origin}${apiBase.startsWith('/') ? '' : '/'}${apiBase}`;
+  const base = new URL(normalizedApiBase);
+  const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsPath = `${base.pathname.replace(/\/$/, '')}/proctoring/ws/${encodeURIComponent(sessionId)}`;
+  return `${wsProtocol}//${base.host}${wsPath}?token=${encodeURIComponent(token)}&role=${role}`;
+}
+
+export function ExamInterface({
+  title,
+  examCode,
+  sessionId,
+  durationMinutes,
+  onSubmit,
+  proctoringMode = 'backend-frame',
+}: ExamInterfaceProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -37,8 +88,19 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
   const [timeLeft, setTimeLeft] = useState(durationMinutes * 60);
   const [warnings, setWarnings] = useState(0);
   const [attention, setAttention] = useState(98);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [proctorMessage, setProctorMessage] = useState<string | null>(null);
   const webcamRef = useRef<Webcam | null>(null);
   const warningCount = useRef(0);
+  const browserEventLastSentRef = useRef<Record<string, number>>({});
+  const isSubmittingRef = useRef(false);
+  const submitRef = useRef<() => Promise<void>>(async () => {});
+  const lastMessageIdRef = useRef<string | null>(null);
+  const localMediaStreamRef = useRef<MediaStream | null>(null);
+  const signalingWsRef = useRef<WebSocket | null>(null);
+  const webrtcPcRef = useRef<RTCPeerConnection | null>(null);
+  const proctorReadyRef = useRef(false);
+  const startOfferRef = useRef<(() => Promise<void>) | null>(null);
 
   // Fetch questions from exam
   useEffect(() => {
@@ -79,11 +141,120 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
   }, [examCode]);
 
   useEffect(() => {
+    if (!sessionId) return undefined;
+
+    const token = getAuthTokenFromStorage();
+    if (!token) return undefined;
+
+    const wsUrl = buildSignalingWsUrl(sessionId, token, 'student');
+    const ws = new WebSocket(wsUrl);
+    signalingWsRef.current = ws;
+
+    const ensurePeerConnection = () => {
+      if (webrtcPcRef.current) return webrtcPcRef.current;
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      });
+
+      pc.onicecandidate = (event) => {
+        if (!event.candidate || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(
+          JSON.stringify({
+            type: 'ice-candidate',
+            payload: event.candidate.toJSON(),
+          })
+        );
+      };
+
+      webrtcPcRef.current = pc;
+      return pc;
+    };
+
+    const startOffer = async () => {
+      if (!proctorReadyRef.current) return;
+      const stream = localMediaStreamRef.current;
+      if (!stream) return;
+
+      const pc = ensurePeerConnection();
+      const senders = pc.getSenders();
+      for (const track of stream.getTracks()) {
+        if (track.kind !== 'video' && track.kind !== 'audio') continue;
+        const exists = senders.some((sender) => sender.track?.id === track.id);
+        if (!exists) {
+          pc.addTrack(track, stream);
+        }
+      }
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      if (ws.readyState === WebSocket.OPEN && pc.localDescription) {
+        ws.send(
+          JSON.stringify({
+            type: 'offer',
+            payload: pc.localDescription,
+          })
+        );
+      }
+    };
+
+    startOfferRef.current = startOffer;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'webrtc-ready' }));
+    };
+
+    ws.onmessage = async (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'webrtc-ready' && message.from_role === 'proctor') {
+          proctorReadyRef.current = true;
+          await startOffer();
+          return;
+        }
+
+        if (message.type === 'answer') {
+          const pc = ensurePeerConnection();
+          const answer = message.payload;
+          if (answer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          }
+          return;
+        }
+
+        if (message.type === 'ice-candidate') {
+          const pc = ensurePeerConnection();
+          const candidate = message.payload;
+          if (candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+        }
+      } catch {
+      }
+    };
+
+    return () => {
+      startOfferRef.current = null;
+      proctorReadyRef.current = false;
+      try {
+        ws.close();
+      } catch {
+      }
+      signalingWsRef.current = null;
+      if (webrtcPcRef.current) {
+        webrtcPcRef.current.close();
+        webrtcPcRef.current = null;
+      }
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           window.clearInterval(timer);
-          handleSubmit();
+          void submitRef.current();
           return 0;
         }
         return prev - 1;
@@ -93,58 +264,163 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
   }, []);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      setAttention(Math.floor(Math.random() * (100 - 85 + 1) + 85));
-    }, 2000);
-    return () => window.clearInterval(interval);
-  }, []);
+    if (proctoringMode !== 'backend-frame') {
+      return undefined;
+    }
 
-  useEffect(() => {
-    let monitorInterval: number | undefined;
+    if (!sessionId || !examCode) return undefined;
 
-    const startMonitoring = async () => {
-      const savedDescriptor = getFaceDescriptor();
-      if (!savedDescriptor) return;
+    let cancelled = false;
 
-      await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
-      await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
-      await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
-
-      monitorInterval = window.setInterval(async () => {
-        const video = webcamRef.current?.video as HTMLVideoElement | undefined;
-        if (!video || video.readyState < 2) return;
-
-        const detection = await faceapi
-          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
-          .withFaceLandmarks()
-          .withFaceDescriptor();
-
-        if (!detection) {
-          warningCount.current += 1;
-          setWarnings((w) => w + 1);
-          return;
+    const runContinuousProctoring = async () => {
+      while (!cancelled) {
+        if (isSubmittingRef.current) {
+          await new Promise((resolve) => window.setTimeout(resolve, 100));
+          continue;
         }
 
-        const distance = faceapi.euclideanDistance(savedDescriptor, detection.descriptor);
-        if (distance > 0.55) {
-          warningCount.current += 1;
-          setWarnings((w) => w + 1);
+        const screenshot = webcamRef.current?.getScreenshot();
+        if (!screenshot) {
+          await new Promise((resolve) => window.setTimeout(resolve, 100));
+          continue;
         }
-      }, 4000);
+
+        try {
+          const frameFile = dataUrlToFile(screenshot, 'frame.jpg');
+          const payload = new FormData();
+          payload.append('session_id', sessionId);
+          payload.append('exam_id', examCode);
+          payload.append('file', frameFile);
+
+          const res = await api.post('/proctoring/analyze/frame', payload, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+
+          const detectedViolations = Array.isArray(res.data?.violations) ? res.data.violations.length : 0;
+          if (detectedViolations > 0) {
+            warningCount.current += detectedViolations;
+            setWarnings((value) => value + detectedViolations);
+            setAttention((value) => Math.max(60, value - detectedViolations * 2));
+          } else {
+            setAttention((value) => Math.min(99, value + 1));
+          }
+        } catch {
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
+      }
     };
 
-    startMonitoring();
+    void runContinuousProctoring();
 
     return () => {
-      if (monitorInterval) window.clearInterval(monitorInterval);
+      cancelled = true;
     };
-  }, []);
+  }, [sessionId, examCode, proctoringMode]);
+
+  useEffect(() => {
+    if (proctoringMode !== 'desktop-poll' || !sessionId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const poll = async () => {
+      while (!cancelled) {
+        if (isSubmittingRef.current) {
+          await new Promise((resolve) => window.setTimeout(resolve, 300));
+          continue;
+        }
+
+        try {
+          const events = await pollDesktopProctoringEvents();
+          if (events.length > 0) {
+            const penalty = events.reduce((acc, event) => acc + Math.max(0, Number(event.score || 0)), 0);
+            if (penalty > 0) {
+              setWarnings((value) => value + events.length);
+              setAttention((value) => Math.max(40, value - Math.min(20, Math.floor(penalty / 2))));
+            }
+          }
+        } catch {
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [proctoringMode, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const pollMessages = async () => {
+      while (!cancelled) {
+        try {
+          const response = await api.get<{ messages: Array<{ id: string; message: string }> }>(`/proctoring/messages/${sessionId}`);
+          const latestMessage = response.data.messages?.[response.data.messages.length - 1];
+          if (latestMessage && latestMessage.id !== lastMessageIdRef.current) {
+            lastMessageIdRef.current = latestMessage.id;
+            setProctorMessage(latestMessage.message);
+            window.setTimeout(() => {
+              setProctorMessage((current) => (current === latestMessage.message ? null : current));
+            }, 12000);
+          }
+        } catch {
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      }
+    };
+
+    void pollMessages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const reportProctorEvent = useCallback(async (eventType: string, eventData: Record<string, unknown> = {}) => {
+    if (!sessionId || isSubmittingRef.current) return;
+
+    const now = Date.now();
+    const lastSent = browserEventLastSentRef.current[eventType] || 0;
+    if (now - lastSent < 2500) return;
+    browserEventLastSentRef.current[eventType] = now;
+
+    try {
+      await api.post('/proctoring/event', {
+        session_id: sessionId,
+        exam_id: examCode,
+        event_type: eventType,
+        event_data: {
+          ...eventData,
+          page_url: window.location.href,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch {
+      // no-op
+    }
+
+    warningCount.current += 1;
+    setWarnings((value) => value + 1);
+    setAttention((value) => Math.max(55, value - 4));
+  }, [examCode, sessionId]);
 
   // Auto-fullscreen on mount with retry - FORCED MODE
   useEffect(() => {
@@ -207,14 +483,33 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
     const handleFullscreenChange = () => {
       const isFullscreen = document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement;
       if (!isFullscreen) {
+        void reportProctorEvent('exit_fullscreen', {
+          reason: 'fullscreen_change',
+        });
         console.warn('⚠️ Fullscreen exit detected! Re-entering...');
         setTimeout(requestFullscreen, 100);
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        void reportProctorEvent('tab_switch', {
+          reason: 'document_hidden',
+        });
+      }
+    };
+
+    const handleWindowBlur = () => {
+      void reportProctorEvent('tab_switch', {
+        reason: 'window_blur',
+      });
+    };
+
     // Request fullscreen on component mount with delay
     const timeoutId = setTimeout(requestFullscreen, 500);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     document.addEventListener('mozfullscreenchange', handleFullscreenChange);
@@ -223,6 +518,8 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
       clearTimeout(timeoutId);
       if (fullscreenEnforceInterval) clearInterval(fullscreenEnforceInterval);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
@@ -236,10 +533,12 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
         }
       }
     };
-  }, []);
+  }, [reportProctorEvent]);
 
-  const handleSubmit = () => {
-    if (questions.length === 0) return;
+  const handleSubmit = async () => {
+    if (questions.length === 0 || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
 
     console.log('\n\n╔══════════════════════════════════════════════════════════╗');
     console.log('║           FINAL EXAM SUBMISSION & SCORING                 ║');
@@ -335,8 +634,20 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
     console.log('Detailed Results:', detailedResults);
     console.log('\n');
 
-    onSubmit(finalScore, integrity);
+    const answerPayload = questions.map((question, index) => ({
+      question_id: String(question.id),
+      selected_option: answers[index] ?? null,
+    }));
+
+    try {
+      await onSubmit(finalScore, integrity, answerPayload);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
+
+  submitRef.current = handleSubmit;
 
   if (loading) {
     return (
@@ -385,7 +696,9 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
           >
             <Maximize2 className="h-5 w-5" />
           </Button>
-          <Button className="bg-primary hover:opacity-90 text-primary-foreground border-none" onClick={handleSubmit}>Finish Exam</Button>
+          <Button className="bg-primary hover:opacity-90 text-primary-foreground border-none" onClick={() => void handleSubmit()} disabled={isSubmitting}>
+            {isSubmitting ? 'Submitting...' : 'Finish Exam'}
+          </Button>
         </div>
       </header>
 
@@ -439,7 +752,7 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
                   <Flag className="h-4 w-4 mr-2" /> Mark for Review
                 </Button>
                 {currentQuestion === questions.length - 1 ? (
-                  <Button onClick={handleSubmit} className="pr-2 bg-primary hover:opacity-90 border-none text-primary-foreground">
+                  <Button onClick={() => void handleSubmit()} className="pr-2 bg-primary hover:opacity-90 border-none text-primary-foreground" disabled={isSubmitting}>
                     Finish Exam <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 ) : (
@@ -454,7 +767,19 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
 
         <aside className="w-80 bg-card border-l border-border p-6 flex flex-col gap-6 shrink-0 z-10">
           <div className="relative rounded-xl overflow-hidden bg-secondary aspect-video border border-border">
-            <Webcam ref={webcamRef} audio={false} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: 'user' }} className="object-cover w-full h-full opacity-80" />
+            <Webcam
+              ref={webcamRef}
+              audio={false}
+              screenshotFormat="image/jpeg"
+              videoConstraints={{ facingMode: 'user' }}
+              onUserMedia={(stream) => {
+                localMediaStreamRef.current = stream;
+                if (proctorReadyRef.current && startOfferRef.current) {
+                  void startOfferRef.current();
+                }
+              }}
+              className="object-cover w-full h-full opacity-80"
+            />
             <div className="absolute top-3 right-3 flex gap-2">
               <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
               <span className="text-[10px] font-bold text-red-500 bg-card/80 px-1 rounded uppercase tracking-wider">REC</span>
@@ -462,6 +787,16 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
           </div>
 
           <div className="space-y-4">
+            {proctorMessage && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
+                <MessageSquare className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-blue-700 mb-1">Message from Proctor</p>
+                  <p className="text-sm text-blue-800">{proctorMessage}</p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-muted-foreground uppercase tracking-wider font-semibold">
                 <span>Attention Level</span>
@@ -484,9 +819,9 @@ export function ExamInterface({ title, examCode, durationMinutes, onSubmit }: Ex
           </div>
 
           <div className="mt-auto bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2 text-red-400 font-medium"><AlertTriangle className="h-4 w-4" /><span>Warnings Issued</span></div>
+            <div className="flex items-center gap-2 mb-2 text-red-400 font-medium"><AlertTriangle className="h-4 w-4" /><span>Violation Count</span></div>
             <div className="text-3xl font-bold text-foreground mb-1">{warnings}</div>
-            <p className="text-xs text-muted-foreground leading-relaxed">Eye movement anomaly detected. Please focus on the screen.</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">Total violations recorded during this attempt.</p>
             <Badge className="mt-3 bg-primary/10 text-primary border-primary/30">AI Proctor Active</Badge>
           </div>
         </aside>

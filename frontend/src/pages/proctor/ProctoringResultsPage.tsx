@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ interface DummyStudent {
 
 export default function ProctoringResultsPage() {
   const { examId } = useParams<{ examId: string }>();
+  const navigate = useNavigate();
   const [exam, setExam] = useState<Exam | null>(null);
   const [loading, setLoading] = useState(true);
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
@@ -51,6 +52,15 @@ export default function ProctoringResultsPage() {
   };
 
   const handleAction = (student: DummyStudent, action: string) => {
+    if (action === 'Open live panel') {
+      navigate(
+        `/proctor/live/${examId}-${student.id}?examId=${examId}&studentId=${student.id}&studentName=${encodeURIComponent(
+          student.name
+        )}&mode=two-way`
+      );
+      return;
+    }
+
     console.log(`[DUMMY ACTION] ${action} for ${student.name} (${student.id}) on exam ${examId}`);
     setOpenMenuFor(null);
   };
@@ -84,6 +94,7 @@ export default function ProctoringResultsPage() {
                   </Button>
                   {openMenuFor === student.id && (
                     <div className="absolute right-0 mt-1 w-44 rounded-md border border-border bg-card shadow-lg z-20">
+                      <button onClick={() => handleAction(student, 'Open live panel')} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary">Open live panel</button>
                       <button onClick={() => handleAction(student, 'Send warning')} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary">Send warning</button>
                       <button onClick={() => handleAction(student, 'Pause exam')} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary">Pause exam</button>
                       <button onClick={() => handleAction(student, 'Terminate attempt')} className="w-full text-left px-3 py-2 text-sm hover:bg-secondary">Terminate attempt</button>

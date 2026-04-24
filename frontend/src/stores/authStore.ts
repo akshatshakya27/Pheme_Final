@@ -11,19 +11,16 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
 
-      login: async (email: string, password: string, role: string, verificationImage?: File | null) => {
+      login: async (email: string, password: string, role: string) => {
         set({ isLoading: true });
         try {
-          const formData = new FormData();
-          formData.append('email', email);
-          formData.append('password', password);
-          formData.append('role', role);
-          if (verificationImage) {
-            formData.append('file', verificationImage);
-          }
+            const payload = new URLSearchParams();
+            payload.append('email', email);
+            payload.append('password', password);
+            payload.append('role', role);
 
-          const res = await api.post('/login', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            const res = await api.post('/login', payload, {
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           });
           const { access_token } = res.data;
           

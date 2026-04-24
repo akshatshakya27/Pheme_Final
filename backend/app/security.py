@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from dataclasses import dataclass
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -58,6 +58,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, _get_jwt_secret(), algorithm=os.getenv("JWT_ALGORITHM", "HS256"))
 
 
+def decode_access_token_payload(token: str) -> dict[str, Any]:
+    return jwt.decode(token, _get_jwt_secret(), algorithms=[os.getenv("JWT_ALGORITHM", "HS256")])
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -68,7 +72,7 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, _get_jwt_secret(), algorithms=[os.getenv("JWT_ALGORITHM", "HS256")])
+        payload = decode_access_token_payload(token)
         user_id = payload.get("sub")
         role = payload.get("role")
         if user_id is None or role is None:

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { roleDefaultRoute } from '@/components/auth/RequireAuth';
-import { Shield, Camera, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Shield, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const features = [
@@ -12,105 +12,22 @@ const features = [
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'student'>('student');
+  const [role, setRole] = useState<'admin' | 'proctor' | 'student'>('student');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [cameraActive, setCameraActive] = useState(false);
-  const [allowWithoutCamera, setAllowWithoutCamera] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const { login, isLoading } = useAuthStore();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (cameraActive && streamRef.current && videoRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-      const playPromise = videoRef.current.play();
-      if (playPromise) {
-        playPromise.catch(() => undefined);
-      }
-    }
-    if (!cameraActive && videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, [cameraActive]);
-
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-    };
-  }, []);
-
-  const toggleCamera = async () => {
-    if (cameraActive) {
-      // Stop camera
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      setCameraActive(false);
-    } else {
-      // Start camera
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        streamRef.current = stream;
-        setCameraActive(true);
-      } catch (err) {
-        setError('Unable to access camera. Please check permissions.');
-      }
-    }
-  };
-
-  const captureVerificationImage = async () => {
-    if (!videoRef.current) return null;
-    const video = videoRef.current;
-    if (!video.videoWidth || !video.videoHeight) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return new Promise<File | null>((resolve) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            resolve(null);
-            return;
-          }
-          resolve(new File([blob], 'verify.jpg', { type: 'image/jpeg' }));
-        },
-        'image/jpeg',
-        0.9
-      );
-    });
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
-      if (!allowWithoutCamera && !cameraActive) {
-        setError('Enable camera to continue face verification.');
-        return;
-      }
-      let verificationImage = null;
-      if (cameraActive) {
-        verificationImage = await captureVerificationImage();
-        if (!verificationImage) {
-          setError('Unable to capture image. Check camera permissions and lighting.');
-          return;
-        }
-      }
-      await login(email, password, role, verificationImage);
+      await login(email, password, role);
       const { user } = useAuthStore.getState();
       if (user) navigate(roleDefaultRoute[user.role]);
     } catch (err) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(detail || 'Login failed. Check credentials and face verification.');
+      setError(detail || 'Login failed. Check your credentials.');
     }
   };
 
@@ -203,35 +120,6 @@ export default function Login() {
             <p className="text-sm text-muted-foreground mt-1">Access your institutional dashboard</p>
           </div>
 
-          {/* Face capture */}
-          {!allowWithoutCamera && (
-            <button
-              type="button"
-              onClick={toggleCamera}
-              className={`w-full mb-5 rounded-xl border-2 border-dashed p-5 flex flex-col items-center gap-2 transition-all ${
-                cameraActive
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/40 bg-white'
-              }`}
-            >
-              <Camera
-                className={`h-7 w-7 ${cameraActive ? 'text-primary' : 'text-muted-foreground'}`}
-              />
-              <span className="text-xs font-medium text-muted-foreground">
-                {cameraActive ? '✓ Camera Active' : 'Enable Face Verification'}
-              </span>
-              {cameraActive && (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-32 object-cover rounded-lg mt-2"
-                />
-              )}
-            </button>
-          )}
-
           <form onSubmit={handleLogin} className="space-y-4">
             {error && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/8 border border-destructive/20">
@@ -244,29 +132,31 @@ export default function Login() {
               <label className="text-xs font-semibold text-foreground mb-1.5 block">
                 Login As
               </label>
-              <div className="flex gap-3">
-                <label className="flex items-center gap-2 flex-1 p-3 rounded-lg border-2 border-border cursor-pointer transition-all" style={{borderColor: role === 'admin' ? '#3b82f6' : '', backgroundColor: role === 'admin' ? '#eff6ff' : ''}}>
-                  <input
-                    type="radio"
-                    name="role"
-                    value="admin"
-                    checked={role === 'admin'}
-                    onChange={(e) => setRole(e.target.value as 'admin' | 'student')}
-                    className="w-4 h-4 cursor-pointer"
-                  />
-                  <span className="text-xs font-medium text-foreground">Admin</span>
-                </label>
-                <label className="flex items-center gap-2 flex-1 p-3 rounded-lg border-2 border-border cursor-pointer transition-all" style={{borderColor: role === 'student' ? '#3b82f6' : '', backgroundColor: role === 'student' ? '#eff6ff' : ''}}>
-                  <input
-                    type="radio"
-                    name="role"
-                    value="student"
-                    checked={role === 'student'}
-                    onChange={(e) => setRole(e.target.value as 'admin' | 'student')}
-                    className="w-4 h-4 cursor-pointer"
-                  />
-                  <span className="text-xs font-medium text-foreground">Student</span>
-                </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { value: 'admin', label: 'Admin' },
+                  { value: 'proctor', label: 'Proctor' },
+                  { value: 'student', label: 'Student' },
+                ].map((item) => (
+                  <label
+                    key={item.value}
+                    className="flex items-center gap-2 p-3 rounded-lg border-2 border-border cursor-pointer transition-all"
+                    style={{
+                      borderColor: role === item.value ? '#3b82f6' : '',
+                      backgroundColor: role === item.value ? '#eff6ff' : '',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={item.value}
+                      checked={role === item.value}
+                      onChange={(e) => setRole(e.target.value as 'admin' | 'proctor' | 'student')}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-foreground">{item.label}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -304,19 +194,6 @@ export default function Login() {
                 </button>
               </div>
             </div>
-
-            {/* Dev Mode Toggle */}
-            <label className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <input
-                type="checkbox"
-                checked={allowWithoutCamera}
-                onChange={(e) => setAllowWithoutCamera(e.target.checked)}
-                className="w-4 h-4 rounded cursor-pointer"
-              />
-              <span className="text-xs font-medium text-amber-900">
-                Login without face verification (Dev Mode)
-              </span>
-            </label>
 
             <button
               type="submit"

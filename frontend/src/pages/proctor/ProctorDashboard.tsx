@@ -1,17 +1,20 @@
 import { StatCard } from '@/components/ui/stat-card';
 import { Monitor, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
+import { Button } from '@/components/ui/button';
 
 interface ExamSession {
   id: number;
-  user_id: number;
+  student_id: string;
   exam_id: number;
   status: string;
 }
 
 export default function ProctorDashboard() {
   const [sessions, setSessions] = useState<ExamSession[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -22,7 +25,7 @@ export default function ProctorDashboard() {
   }, []);
 
   const liveSessions = useMemo(
-    () => sessions.filter((session) => session.status === 'ongoing'),
+    () => sessions.filter((session) => ['in_progress', 'ongoing', 'active'].includes(session.status)),
     [sessions]
   );
   return (
@@ -72,6 +75,17 @@ export default function ProctorDashboard() {
                     Ongoing
                   </span>
                 </div>
+                <Button
+                  className="mt-3 w-full"
+                  size="sm"
+                  onClick={() =>
+                    navigate(
+                      `/proctor/live/${session.id}?examId=${session.exam_id}&studentId=${session.student_id}&studentName=Student%20${session.student_id}&mode=two-way`
+                    )
+                  }
+                >
+                  Open Live Panel
+                </Button>
               </div>
             ))
           )}

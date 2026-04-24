@@ -1,0 +1,72 @@
+{
+  "name": "pheme-exam-desktop",
+  "version": "1.0.0",
+  "description": "Pheme Secure Proctored Exam Desktop Application",
+  "main": "main.js",
+  "homepage": "./",
+  "author": "Pheme",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run react-dev\" \"wait-on http://localhost:8080 && electron .\"",
+    "react-dev": "cd ../frontend && npm run dev",
+    "build": "npm run build:react && npm run build:electron",
+    "build:react": "cd ../frontend && npm run build",
+    "build:electron": "electron-builder --publish never",
+    "build:exe": "npm run build:react && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win --publish never",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^25.1.1",
+    "wait-on": "^7.0.1"
+  },
+  "build": {
+    "appId": "com.pheme.exam",
+    "productName": "Pheme Secure Exam",
+    "files": [
+      "main.js",
+      "preload.js",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Pheme Secure Exam"
+    }
+  }
+}

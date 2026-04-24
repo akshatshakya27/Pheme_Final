@@ -1,106 +1,134 @@
-export type UserRole = 'super_admin' | 'institute_admin' | 'exam_admin' | 'proctor' | 'student';
+export type UserRole = 'super_admin' | 'institute_admin' | 'faculty' | 'student' | 'exam_admin' | 'proctor';
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
-  institute_id?: string;
-  avatar_url?: string;
+  avatar?: string;
+  instituteId?: string;
+  instituteName?: string;
+  batchId?: string;
+  batchCode?: string;
+  batchYear?: string;
+  courseName?: string;
+  code?: string;
+  rollNo?: string;
+  section?: string;
 }
 
 export interface Institute {
   id: string;
-  institute_code: string;
-  name: string;
-  address?: string;
-  contact_email?: string;
-  created_at: string;
-}
-
-export interface Student {
-  id: string;
-  user_id: string;
-  institute_id: string;
-  batch_id: string;
-  enrollment_number: string;
   name: string;
   email: string;
-  face_registered: boolean;
-}
-
-export interface Exam {
-  id: string;
-  title: string;
-  institute_id: string;
-  faculty_id: string;
-  subject_code: string;
-  exam_type: string;
-  exam_year: string;
-  duration_minutes: number;
-  passing_marks: number;
-  scheduled_time?: string;
-  created_at: string;
-}
-
-export interface ProctoringConfig {
-  block_tabs: boolean;
-  strict_mode: boolean;
-  face_detection: boolean;
-  audio_monitoring: boolean;
-  screen_recording: boolean;
-  periodic_capture: boolean;
-  capture_interval_seconds: number;
-}
-
-export interface Question {
-  id: string;
-  exam_id: string;
-  type: 'mcq' | 'subjective' | 'coding';
-  text: string;
-  options?: string[];
-  correct_answer?: string;
-  marks: number;
-  order: number;
+  phone: string;
+  adminName: string;
+  adminEmail: string;
+  status: 'active' | 'suspended';
+  totalBatches: number;
+  totalStudents: number;
+  totalFaculties: number;
+  totalExams: number;
+  riskScore: number;
+  createdAt: string;
 }
 
 export interface Batch {
   id: string;
   name: string;
-  institute_id: string;
-  course_code: string;
-  batch_year: string;
-  course_name: string;
-  student_count?: number;
-  created_at: string;
+  department: string;
+  year: string;
+  totalStudents: number;
+  totalExams: number;
+  avgScore: number;
+  riskSummary: 'low' | 'medium' | 'high';
 }
 
-export interface ExamSession {
+export interface Exam {
   id: string;
-  exam_id: string;
-  student_id: string;
-  status: 'active' | 'submitted' | 'flagged' | 'terminated';
-  started_at: string;
-  submitted_at?: string;
-  trust_score: number;
+  title: string;
+  description: string;
+  duration: number;
+  totalMarks: number;
+  mode: 'online' | 'hybrid';
+  status: 'draft' | 'scheduled' | 'live' | 'completed';
+  batches: string[];
+  proctors: string[];
+  startDate: string;
+  endDate: string;
+  createdBy: string;
+  totalQuestions: number;
 }
 
-export interface Incident {
+export interface Question {
   id: string;
-  session_id: string;
-  type: 'face_not_detected' | 'multiple_faces' | 'tab_switch' | 'audio_anomaly' | 'object_detected';
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  type: 'mcq' | 'short_answer';
+  text: string;
+  options?: string[];
+  correctAnswer: string;
+  marks: number;
+}
+
+export interface Student {
+  id: string;
+  name: string;
+  email: string;
+  batchId: string;
+  batchName: string;
+  enrollmentNo: string;
+  status: 'active' | 'inactive';
+}
+
+export interface Faculty {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  designation: string;
+  batchIds: string[];
+  status: 'active' | 'inactive';
+}
+
+export interface ProctoringSession {
+  sessionId: string;
+  studentId: string;
+  examId: string;
+  studentName: string;
+  status: 'connected' | 'disconnected' | 'warning';
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  faceDetected: boolean;
+  networkStrength: 'strong' | 'moderate' | 'weak';
+  progress: number;
+  violations: Violation[];
+}
+
+export interface Violation {
+  id: string;
+  type: string;
   timestamp: string;
-  snapshot_url?: string;
+  severity: 'low' | 'medium' | 'high';
   description: string;
 }
 
-export interface AuthState {
-  user: User | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (email: string, password: string, verificationImage?: File | null) => Promise<void>;
-  logout: () => void;
-  setUser: (user: User) => void;
+export interface ExamResult {
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+  examId: string;
+  examTitle: string;
+  score: number;
+  totalMarks: number;
+  percentage: number;
+  violations: number;
+  released: boolean;
+}
+
+export interface KPIData {
+  title: string;
+  value: string | number;
+  change?: string;
+  changeType?: 'positive' | 'negative' | 'neutral';
+  icon: string;
+  colorIndex: 1 | 2 | 3 | 4 | 5 | 6;
+  link?: string;
 }

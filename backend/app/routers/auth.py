@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from .. import database, models, schemas
 from ..security import create_access_token, get_current_user, get_password_hash, require_role, verify_password
@@ -29,19 +30,21 @@ async def login(
     email: str = Form(...),
     password: str = Form(...),
     role: str = Form(...),
-    file: UploadFile | None = File(None),
     db: Session = Depends(database.get_db),
 ):
-    del file
+    if role not in ("admin", "proctor", "student"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'proctor', or 'student'")
 
-    if role not in ("admin", "student"):
-        raise HTTPException(status_code=400, detail="Role must be 'admin' or 'student'")
-
-    if role == "admin":
-        user, resolved_role = _resolve_admin_by_email(db, email)
-    else:
-        user = db.query(models.Student).filter(models.Student.email == email).first()
+    if role == "student":
+        user = db.query(models.Student).filter(
+            or_(models.Student.email == email, models.Student.student_code == email)
+        ).first()
         resolved_role = "student"
+    elif role == "proctor":
+        user = db.query(models.Faculty).filter(models.Faculty.email == email).first()
+        resolved_role = "proctor"
+    else:
+        user, resolved_role = _resolve_admin_by_email(db, email)
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -55,7 +58,6 @@ async def login(
         "token_type": "bearer",
         "user_id": str(user.id),
         "role": resolved_role,
-        "verification_image_saved_at": None,
     }
 
 

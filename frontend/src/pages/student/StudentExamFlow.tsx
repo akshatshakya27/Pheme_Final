@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { TermsAndConditions } from '@/components/student-final/TermsAndConditions';
 import { Verification } from '@/components/student-final/Verification';
 import { ExamInterface } from '@/components/student-final/ExamInterface';
 import { Result } from '@/components/student-final/Result';
 
-type Stage = 'verify' | 'exam' | 'result';
+type Stage = 'terms' | 'verify' | 'exam' | 'result';
 
 interface Exam {
   id: string;
@@ -23,8 +24,12 @@ interface AssignmentWithExam {
 export default function StudentExamFlow() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [stage, setStage] = useState<Stage>('verify');
+  const [stage, setStage] = useState<Stage>('terms');
   const [result, setResult] = useState<{ score: number; integrity: number; examId: string } | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStarting, setSessionStarting] = useState(false);
+  const [sessionInitError, setSessionInitError] = useState<string | null>(null);
+  const [resultSaveError, setResultSaveError] = useState<string | null>(null);
 
   const { data: assignment, isLoading: assignmentLoading } = useQuery({
     queryKey: ['assignment', id],
@@ -52,6 +57,25 @@ export default function StudentExamFlow() {
     if (windowStatus !== 'after' || !id) return;
     api.post(`/sessions/exam/${id}/missed`).catch(() => {});
   }, [windowStatus, id]);
+
+  const handleVerified = async () => {
+    if (!id) return;
+    setSessionStarting(true);
+    setSessionInitError(null);
+    try {
+      const res = await api.post(`/sessions/exam/${id}/start`);
+      if (res.data?.status !== 'in_progress') {
+        throw new Error('Session is not active for proctoring.');
+      }
+      setSessionId(res.data.id);
+      setStage('exam');
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || 'Unable to start exam session. Please retry.';
+      setSessionInitError(detail);
+    } finally {
+      setSessionStarting(false);
+    }
+  };
 
   if (!id) return null;
 
@@ -87,20 +111,55 @@ export default function StudentExamFlow() {
     );
   }
 
+  if (stage === 'terms') {
+    return (
+      <TermsAndConditions
+        examTitle={examTitle}
+        onAccept={() => setStage('verify')}
+      />
+    );
+  }
+
   if (stage === 'verify') {
-    return <Verification onVerified={() => setStage('exam')} />;
+    return (
+      <div>
+        <Verification onVerified={handleVerified} />
+        {(sessionStarting || sessionInitError) && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+            <div className="rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground shadow">
+              {sessionStarting ? 'Starting exam session...' : sessionInitError}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (stage === 'result' && result) {
-    return <Result score={result.score} integrity={result.integrity} examId={result.examId} onBack={() => navigate('/student')} />;
+    return <Result score={result.score} integrity={result.integrity} saveError={resultSaveError} onBack={() => navigate('/student')} />;
   }
 
   return (
     <ExamInterface
       title={examTitle}
       examCode={id}
+      sessionId={sessionId || ''}
       durationMinutes={examDuration}
-      onSubmit={(score, integrity) => {
+      onSubmit={async (score, integrity) => {
+        let saveError: string | null = null;
+        try {
+          if (!sessionId) {
+            throw new Error('Exam session was not initialized.');
+          }
+          await api.post(`/sessions/${sessionId}/complete`, {
+            score,
+            integrity,
+            status: 'submitted',
+          });
+        } catch (error: any) {
+          saveError = error?.response?.data?.detail || error?.message || 'Failed to finalize exam session.';
+        }
+        setResultSaveError(saveError);
         setResult({ score, integrity, examId: id || '' });
         setStage('result');
       }}

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func
 
@@ -158,6 +158,7 @@ class ExamSession(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     final_score = Column(Integer, nullable=True)
     violation_found = Column(Boolean, default=False)
+    violation_count = Column(Integer, default=0)
     mongo_log_ref = Column(String(255), nullable=True)
     s3_media_prefix = Column(String(255), nullable=True)
 
@@ -172,3 +173,24 @@ class ExamSession(Base):
     @property
     def integrity(self) -> int | None:
         return None
+
+
+class ViolationLog(Base):
+    __tablename__ = "violation_logs"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["institute_id", "session_id"],
+            ["exam_sessions.institute_id", "exam_sessions.id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    institute_id = Column(UUID(as_uuid=True), ForeignKey("institutes.id", ondelete="CASCADE"), primary_key=True)
+    session_id = Column(UUID(as_uuid=True), nullable=False)
+    violation_type = Column(String(100), nullable=False)  # e.g., face_not_detected, multiple_faces, looking_away, speech_detected
+    timestamp = Column(DateTime(timezone=True), server_default=func.current_timestamp())
+    screenshot_path = Column(String(500), nullable=True)  # relative path to saved screenshot
+    video_clip_path = Column(String(500), nullable=True)  # relative path to video clip (optional)
+    extra_data = Column(JSONB, nullable=True)  # additional data: pitch, yaw, audio levels, etc.

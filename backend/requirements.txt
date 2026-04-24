@@ -11,3 +11,10 @@ pydantic
 face-recognition
 numpy
 Pillow
+opencv-python
+mediapipe
+torch
+torchaudio
+sounddevice
+ultralytics
+ultralytics

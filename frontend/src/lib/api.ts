@@ -10,6 +10,13 @@ api.interceptors.request.use((config) => {
   if (config.headers && 'Authorization' in config.headers && config.headers.Authorization) {
     return config;
   }
+
+  const desktopToken = localStorage.getItem('desktop-exam-token');
+  if (desktopToken) {
+    config.headers.Authorization = `Bearer ${desktopToken}`;
+    return config;
+  }
+
   const stored = localStorage.getItem('proctora-auth');
   if (stored) {
     try {

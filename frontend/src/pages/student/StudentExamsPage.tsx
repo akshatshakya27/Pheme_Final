@@ -22,6 +22,7 @@ export default function StudentExamsPage() {
   const { user, logout } = useAuthStore();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [launchingExamId, setLaunchingExamId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAssignments();
@@ -36,6 +37,22 @@ export default function StudentExamsPage() {
       setAssignments([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const launchDesktopExam = async (examId: string) => {
+    setLaunchingExamId(examId);
+    try {
+      const res = await api.post('/desktop-exam/launch-token', { exam_id: examId });
+      const deepLink = res.data?.deep_link;
+      if (!deepLink) {
+        throw new Error('Desktop launch link is unavailable.');
+      }
+      window.location.href = deepLink;
+    } catch {
+      window.location.href = `/exam/${examId}/live`;
+    } finally {
+      setLaunchingExamId(null);
     }
   };
 
@@ -112,11 +129,15 @@ export default function StudentExamsPage() {
                   <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
                     <Clock className="h-4 w-4 text-primary" /> {assignment.exam.duration} minutes
                   </p>
-                  <Link
-                    to={`/exam/${assignment.exam.id}/live`}
-                    className="block w-full text-center px-4 py-2 rounded-md bg-primary hover:opacity-90 text-primary-foreground text-sm font-medium"
+                  <button
+                    onClick={() => void launchDesktopExam(assignment.exam.id)}
+                    disabled={launchingExamId === assignment.exam.id}
+                    className="block w-full text-center px-4 py-2 rounded-md bg-primary hover:opacity-90 text-primary-foreground text-sm font-medium disabled:opacity-60"
                   >
-                    Start Exam
+                    {launchingExamId === assignment.exam.id ? 'Launching...' : 'Start Exam'}
+                  </button>
+                  <Link to={`/exam/${assignment.exam.id}/live`} className="block w-full text-center px-4 py-2 rounded-md border border-border text-foreground text-sm font-medium hover:bg-secondary">
+                    Continue in Browser
                   </Link>
                 </CardContent>
               </Card>

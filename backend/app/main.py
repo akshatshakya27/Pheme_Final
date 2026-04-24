@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware # <--- IMPORT THIS
-from .routers import exams, auth, questions, batches, assignments, institutes, users, sessions, departments, faculties
+from .routers import exams, auth, questions, batches, assignments, institutes, users, sessions, departments, faculties, proctoring, desktop_exam
 
 # Partitioned schema is provisioned through SQL migrations.
 
@@ -34,6 +34,18 @@ app.include_router(departments.router, prefix="/api", tags=["Departments"])
 app.include_router(faculties.router, prefix="/api", tags=["Faculties"])
 app.include_router(users.router, prefix="/api", tags=["Users"])
 app.include_router(sessions.router, prefix="/api", tags=["Sessions"])
+app.include_router(proctoring.router, prefix="/api", tags=["Proctoring"])
+app.include_router(desktop_exam.router, prefix="/api", tags=["Desktop Exam"])
+
+
+@app.on_event("startup")
+def _startup_proctoring() -> None:
+    proctoring.warmup_proctoring_engines()
+
+
+@app.on_event("shutdown")
+def _shutdown_proctoring() -> None:
+    proctoring.shutdown_proctoring_engines()
 
 @app.get("/")
 def health_check():

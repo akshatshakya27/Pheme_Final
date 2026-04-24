@@ -1,60 +1,16 @@
-import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Home, ShieldCheck, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useAuthStore } from '@/stores/authStore';
-import api from '@/lib/api';
 
 interface ResultProps {
   score: number;
   integrity: number;
-  examId: string;
   onBack: () => void;
+  saveError?: string | null;
 }
 
-export function Result({ score, integrity, examId, onBack }: ResultProps) {
-  const { user } = useAuthStore();
-  const [saving, setSaving] = useState(true);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const saveExamResult = async () => {
-      try {
-        setSaving(true);
-        setSaveError(null);
-        
-        // Validate required fields
-        if (!user?.id) {
-          throw new Error('User ID not found. Please log in again.');
-        }
-        if (!examId) {
-          throw new Error('Exam ID not found.');
-        }
-
-        // Create session with complete data
-        const response = await api.post('/sessions/', {
-          student_id: user.id,
-          exam_id: examId,
-          score: score,
-          integrity: integrity,
-          status: 'submitted'
-        });
-        
-        console.log('Exam result saved successfully:', response.data);
-      } catch (error: any) {
-        console.error('Failed to save exam result:', error);
-        const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to save exam result';
-        setSaveError(errorMsg);
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    if (user?.id && examId && (score >= 0 || integrity >= 0)) {
-      saveExamResult();
-    }
-  }, [user?.id, examId, score, integrity]);
+export function Result({ score, integrity, onBack, saveError }: ResultProps) {
   const isPassed = score >= 60;
   const isHighIntegrity = integrity >= 90;
 
@@ -83,13 +39,6 @@ export function Result({ score, integrity, examId, onBack }: ResultProps) {
               </div>
             )}
             
-            {saving && (
-              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 flex gap-3">
-                <div className="h-5 w-5 rounded-full border-2 border-blue-300 border-t-blue-600 animate-spin" />
-                <div className="text-sm text-blue-700">Saving your exam results...</div>
-              </div>
-            )}
-
             <div className="grid grid-cols-2 gap-4">
               <div className="p-6 rounded-2xl bg-secondary border border-border text-center">
                 <div className="text-sm text-muted-foreground uppercase tracking-wider font-semibold mb-2">Total Score</div>
@@ -103,7 +52,7 @@ export function Result({ score, integrity, examId, onBack }: ResultProps) {
               </div>
             </div>
 
-            <Button className="w-full h-12 text-base font-semibold bg-primary hover:opacity-90 border-none text-primary-foreground" onClick={onBack} disabled={saving}>
+            <Button className="w-full h-12 text-base font-semibold bg-primary hover:opacity-90 border-none text-primary-foreground" onClick={onBack}>
               <Home className="mr-2 h-4 w-4" /> Return to Dashboard
             </Button>
           </CardContent>
