@@ -8,8 +8,8 @@ python-jose[cryptography]
 python-multipart
 psycopg2-binary
 pydantic
-dlib @ file:../misc/Face_Recognition_Project_Pheme/dlib-19.22.99-cp310-cp310-win_amd64.whl
-face-recognition
+dlib @ file:../misc/Face_Recognition_Project_Pheme/dlib-19.22.99-cp310-cp310-win_amd64.whl ; platform_system == "Windows"
+face-recognition ; platform_system == "Windows"
 numpy
 Pillow
 opencv-python
