@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware # <--- IMPORT THIS
+import os
 from .routers import exams, auth, questions, batches, assignments, institutes, users, sessions, departments, faculties, proctoring, desktop_exam
 
 # Partitioned schema is provisioned through SQL migrations.
@@ -40,7 +41,9 @@ app.include_router(desktop_exam.router, prefix="/api", tags=["Desktop Exam"])
 
 @app.on_event("startup")
 def _startup_proctoring() -> None:
-    proctoring.warmup_proctoring_engines()
+    # Keep startup fast in cloud deploys. Enable warmup explicitly when needed.
+    if os.getenv("PROCTOR_WARMUP_ON_STARTUP", "false").lower() == "true":
+        proctoring.warmup_proctoring_engines()
 
 
 @app.on_event("shutdown")
